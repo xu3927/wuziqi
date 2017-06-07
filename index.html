@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title></title>
+    <style type="text/css">
+        *{
+            margin: 0;
+            padding: 0;
+        }
+        html, body{
+            width: 100%;
+            height: 100%;
+        }
+        body{
+            background: bisque;
+            padding-left: 50px;
+        }
+        h1{
+            padding: 20px 0;
+        }
+        #control{
+            visibility: hidden;
+        }
+        #control.show{
+            visibility: visible;
+        }
+        #chessboard{
+            position: relative;
+        }
+        #chessboard div{
+            height: 31px;
+        }
+        #chessboard div span{
+            cursor: pointer;
+            width: 30px;
+            height: 30px;
+            border: none;
+            border-bottom: 1px solid #000;
+            border-right: 1px solid #000;
+            display: inline-block;
+            position: relative;
+        }
+        #chessboard div:first-child span{
+            border-top: 1px solid #000;
+        }
+        #chessboard div span:first-child{
+            border-left: 1px solid #000;
+            border-top: 1px solid #000;
+        }
+        #chessboard div span.white:after{
+            content: '';
+            width: 25px;
+            height: 25px;
+            position: absolute;
+            margin: auto;
+            left: 0;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            background: white;
+            border-radius: 50%;
+        }
+        #chessboard div span.black:after{
+            content: '';
+            width: 25px;
+            height: 25px;
+            position: absolute;
+            margin: auto;
+            left: 0;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            background: black;
+            border-radius: 50%;
+        }
+        button{
+            padding: 6px 15px;
+        }
+        .lock{
+            width: 100%;
+            height: 100%;
+            font-size: 50px;
+            text-align: center;
+            line-height: 200px;
+            background-color: rgba(0, 0, 0, 0.5);
+            position: fixed;
+            top: 0;
+            left: 0;
+            color: yellow;
+            font-weight: bold;
+            z-index: 999;
+            opacity: 0.6;
+            visibility: hidden;
+        }
+        .lock.show{
+            visibility: visible;
+        }
+    </style>
+</head>
+<body>
+<h1>五子棋</h1>
+<div id="Gobang">
+    <div id="control">
+        <div class="start">
+            <button type="button" id="blackFirst">黑先</button>
+            <button type="button" id="whiteFirst">白先</button>
+            <button type="button" id="start">Start</button>
+            <button type="button" id="regret">悔棋</button>
+            <button type="button" id="repeat">重下</button>
+        </div>
+        <div class="nowPlayer" style="margin: 20px 0;">
+            <p>
+                <span>当前Player:</span>
+                <span id="nowPlayer"></span>
+            </p>
+        </div>
+    </div>
+    <div id="chessboard"></div>
+</div>
+<div class="lock">
+    游戏结束
+</div>
+<script type="text/javascript">
+let global = {
+    rowNum: 10,
+    isPlaying: false,
+    isWin: false,
+    player1: null,
+    player2: null,
+    nowPlayer: 0, // 可取 1, 2
+    nowColor: '', // 取值 white | black
+    map: [], // 保存当前局面. 每一位用n位字符串保存一排的局面. 0未下, 1 白, 2 黑
+    chesses: [], // 保存当前的每个棋子状态
+    history: [],
+    regretNum: 0
+};
+let enumData = {
+    player: {
+        white: '白棋',
+        black: '黑棋'
+    },
+    numToColor: {
+        0: '',
+        1: 'white',
+        2: 'black'
+    },
+    colorToNum: {
+        white: 1,
+        black: 2
+    }
+};
+let Utils = {
+    copy (obj) {
+        return JSON.parse(JSON.stringify(obj));
+    }
+};
+window.onload = function () {
+    intialization();
+}
+function intialization () {
+    global.rowNum = 15; // 棋盘格数
+    global.nowColor = 'white';
+    changeConsoleInfo();
+    creatChessboard();
+    showControlDom();
+    render();
+    bindEvent();
+}
+
+function bindEvent () {
+    bindChessBoardEvent();
+    const blackFirst = document.querySelector('#blackFirst');
+    const whiteFirst = document.querySelector('#whiteFirst');
+    const startEle = document.querySelector('#start');
+    const nowPlayerEle = document.querySelector('#nowPlayer');
+    const regretEle = document.querySelector('#regret');
+    const repeatEle = document.querySelector('#repeat');
+    blackFirst.addEventListener('click', choosePlayer('black'));
+    whiteFirst.addEventListener('click', choosePlayer('white'));
+    startEle.addEventListener('click', start);
+    regretEle.addEventListener('click', regret);
+    repeatEle.addEventListener('click', repeat);
+
+    function choosePlayer (color) {
+        return function () {
+            if (global.isPlaying) return;
+            global.nowColor = color;
+            nowPlayerEle.innerText = enumData.player[global.nowColor];
+        }
+    }
+    function start () {
+        global.nowColor = global.nowColor || 'black';
+        let firstColor = global.nowColor;
+        let secondColor = firstColor === 'white' ? 'black' : 'white';
+        global.player1 = new Player(firstColor);
+        global.player2 = new Player(secondColor);
+        enumData.colorToNum[firstColor] = 1;
+        enumData.colorToNum[secondColor] = 2;
+        enumData.numToColor[1] = firstColor;
+        enumData.numToColor[2] = secondColor;
+        global.nowPlayer = 1;
+        global.isPlaying = true;
+    }
+    function regret () {
+        if (global.isWin) return;
+        if (global.history.length > global.regretNum + 1) {
+            global.regretNum++;
+            global.map = Utils.copy(global.history[global.history.length - 1 - global.regretNum]);
+            render();
+        }
+    }
+    function repeat () {
+        if (global.isWin) return;
+        if (global.regretNum >= 1) {
+            global.regretNum--;
+            global.map = Utils.copy(global.history[global.history.length - 1 - global.regretNum]);
+            render();
+        }
+    }
+}
+
+function bindChessBoardEvent () {
+    const chessboard = document.querySelector('#chessboard');
+    const chessboard_left = chessboard.offsetLeft + parseInt(window.getComputedStyle(chessboard).paddingLeft);
+    const chessboard_top = chessboard.offsetTop + parseInt(window.getComputedStyle(chessboard).paddingLeft);
+    chessboard.addEventListener('click', event => {
+        if (!global.isPlaying || global.isWin) return;
+        const x = event.clientX;
+        const y = event.clientY;
+        const deltaX = x - chessboard_left - document.body.scrollLeft;
+        const deltaY = y - chessboard_top - document.body.scrollTop;
+        const colNum = parseInt(deltaX / 31);
+        const rowNum = parseInt(deltaY / 31);
+        if (deltaY < 0 || deltaX < 0 || rowNum >= global.rowNum || colNum >= global.rowNum) return;
+        round(rowNum, colNum);
+    });
+}
+
+function Player (color) {
+    this.color = color;
+}
+
+function showControlDom () {
+    let controlDom = document.querySelector('#control');
+    controlDom.className = 'show';
+}
+
+function creatChessboard () {
+    let chessboard = document.querySelector('#chessboard');
+    let rowNum = global.rowNum;
+    let arr = new Array(rowNum + 1);
+    let row = arr.join('0');
+    global.map = arr.fill(row);
+    global.history.push(Utils.copy(global.map));
+    let chesses = global.chesses;
+    let _dom = document.createDocumentFragment();
+    for (let i = 0; i < rowNum; i++) {
+        let rowDom = document.createElement('div');
+        for (let j = 0; j < rowNum; j++) {
+            let _chess = new Chess(i * rowNum + j);
+            rowDom.appendChild(_chess.ele);
+            chesses.push(_chess);
+        }
+        _dom.appendChild(rowDom);
+    }
+    chessboard.appendChild(_dom);
+}
+
+function Chess (index) {
+    const ele = document.createElement('span');
+    this.ele = ele;
+    this.color = '';
+    this.index = index;
+}
+Chess.prototype.changeColor = function (color) {
+    this.color = color;
+    this.ele.className = color;
+};
+
+function render () {
+    let chesses = global.chesses;
+    let _map = global.map;
+    _map.forEach((row, rowNum) => {
+        Array.from(row).forEach((col, colNum) => {
+            const chess = chesses[global.rowNum * rowNum + colNum];
+            chess && chess.changeColor(enumData.numToColor[col]);
+        });
+    });
+}
+
+function round (rowNum, colNum) {
+    const _rowArr = global.map[rowNum].split('');
+    const _item = _rowArr[colNum];
+    if (_item !== '0') {
+        return;
+    }
+    updateMap(rowNum, colNum);
+    render();
+    isWin(rowNum, colNum);
+    if (global.isWin) {
+        lock();
+        return;
+    }
+    updateHistory();
+    switchPlayer();
+    changeConsoleInfo();
+}
+function updateMap (rowNum, colNum) {
+    const _rowArr = global.map[rowNum].split('');
+    const _num = enumData.colorToNum[global.nowColor];
+    _rowArr.splice(colNum, 1, _num);
+    global.map[rowNum] = _rowArr.join('');
+}
+function switchPlayer () {
+    global.nowPlayer = global.nowPlayer === 1 ? 2 : 1;
+    global.nowColor = global['player' + global.nowPlayer].color;
+}
+function changeConsoleInfo () {
+    const nowPlayer = document.querySelector('#nowPlayer');
+    nowPlayer.innerText = enumData.player[global.nowColor];
+}
+function updateHistory () {
+    if (global.regretNum > 0) {
+        global.history = global.history.slice(0, global.history.length - global.regretNum);
+    }
+    global.history.push(Utils.copy(global.map));
+    global.regretNum = 0;
+}
+function isWin (rowNum, colNum) {
+    let map = global.map;
+    let winGroup = winSituation(colNum, rowNum);
+    let _isWin = false;
+    let colorNum = enumData.colorToNum[global.nowColor];
+    for (let j = 0; j < winGroup.length; j++) {
+        let coordinate = winGroup[j];
+        if (Array.isArray(coordinate) && coordinate.length === 5) {
+            for (let i = 0; i < 5; i++) {
+                colNum = coordinate[i][0];
+                rowNum = coordinate[i][1];
+                let map_num = map[rowNum].charAt(colNum);
+                _isWin = parseInt(map_num) === colorNum;
+                if (!_isWin) break;
+            }
+            if (_isWin) {
+                global.isWin = _isWin;
+                return;
+            }
+        }
+    }
+}
+function winSituation (colNum, rowNum) {
+    let winGroup = [];
+    for (let i = 0; i < 8; i++) {
+        winGroup[i] = [];
+    }
+    let totalNum = global.rowNum;
+    const leftPossible = colNum - 5 >= 0;
+    const rightPossible = colNum + 5 < totalNum;
+    const topPossible = rowNum - 5 >= 0;
+    const bottomPossible = rowNum + 5 < totalNum;
+    const lbPossible = bottomPossible && leftPossible;
+    const rbPossible = bottomPossible && rightPossible;
+    const ltPossible = leftPossible && topPossible;
+    const rtPossible = rightPossible && topPossible;
+
+    for (let i = 0; i < 5; i++) {
+        leftPossible && winGroup[0].push([colNum - i, rowNum]); // 左
+        rightPossible && winGroup[1].push([colNum + i, rowNum]); // 向右5个
+        topPossible && winGroup[2].push([colNum, rowNum - i]); // 上
+        bottomPossible && winGroup[3].push([colNum, rowNum + i]); // 向下
+        rbPossible && winGroup[4].push([colNum + i, rowNum + i]); // 向右下
+        lbPossible && winGroup[5].push([colNum - i, rowNum + i]); // 左下
+        ltPossible && winGroup[6].push([colNum - i, rowNum - i]); // 左上
+        rtPossible && winGroup[7].push([colNum + i, rowNum - i]); // 右上
+    }
+    return winGroup;
+}
+
+function lock () {
+    const lockDom = document.querySelector('.lock');
+    lockDom.className = 'lock show'
+    lockDom.innerText += enumData.player[global.nowColor] + '赢';
+    lockDom.onclick = function () {
+        lockDom.className = 'lock';
+    }
+}
+
+</script>
+</body>
+</html>
